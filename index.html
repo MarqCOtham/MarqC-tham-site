@@ -6,6 +6,9 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230a0a0c'/%3E%3Ctext x='32' y='46' font-family='Georgia,serif' font-size='44' text-anchor='middle' fill='%23ece8e1'%3EØ%3C/text%3E%3Crect x='16' y='53' width='32' height='3' fill='%23a45ee6'/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta property="og:site_name" content="MarqCØtham">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"MusicGroup","name":"MarqCØtham","description":"Music • Emotion • Reality • Beyond. Official site of the independent artist, producer and songwriter.","sameAs":["https://www.instagram.com/marqparkertenn/","https://www.instagram.com/marqcotham_official/","https://www.instagram.com/cotham_official/","https://www.instagram.com/marqwrld888/","https://www.tiktok.com/@marqctham","https://www.tiktok.com/@cotham30","https://www.tiktok.com/@marq8310","https://www.youtube.com/@marqcotham"]}</script>
+
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="MarqCØtham — Music • Emotion • Reality • Beyond. Official site of the independent artist, producer and songwriter.">
 <meta property="og:title" content="MarqCØtham — Official"><meta property="og:description" content="Music • Emotion • Reality • Beyond. Official site of independent artist MarqCØtham."><meta property="og:type" content="website"><meta name="twitter:card" content="summary"><title>MarqCØtham — Official</title>
@@ -1020,32 +1023,57 @@ function showError(el, msg) {
   box.textContent = msg; box.hidden = !msg; el.toggleAttribute("aria-invalid", !!msg);
   if (msg) { box.id = box.id || "err-" + Math.random().toString(36).slice(2, 8); el.setAttribute("aria-describedby", box.id); } else el.removeAttribute("aria-describedby");
 }
-function wireForm(formId, noteId, key, okMsg) {
+const FORM_DEBUG = /[?&]formdebug=1/.test(location.search);   // visit the site with ?formdebug=1 to see the exact reply from the form service
+function wireForm(formId, noteId, key, okMsg, opts = {}) {
   const f = $(formId), n = $(noteId), btn = f.querySelector("button[type=submit]"), url = safe(C[key]) || safe(C.formAction);
   if (!url) { f.querySelectorAll("input,textarea,button").forEach(x => x.disabled = true); n.textContent = "This form is temporarily unavailable."; return; }
   f.action = url;
+  let busy = false, lastOk = "";
   f.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("input", () => { if (!el.hasAttribute("aria-invalid")) return; showError(el, fieldError(el)); }));
   f.addEventListener("submit", async e => {
-    e.preventDefault(); n.className = "fnote"; n.textContent = "";
+    e.preventDefault();
+    if (busy) return;                                   // never send twice at the same time
+    n.className = "fnote"; n.textContent = "";
     const link = f.elements.beat_link; if (link && link.value.trim() && !/^[a-z][a-z0-9+.-]*:\/\//i.test(link.value.trim())) link.value = "https://" + link.value.trim();
     let first = null;
     f.querySelectorAll("[data-rule]").forEach(el => { const m = fieldError(el); showError(el, m); if (m && !first) first = el; });
     if (first) { first.focus(); return; }
     if (f.elements._gotcha && f.elements._gotcha.value) return;
     if (C.mode === "post") { f.target = "_blank"; f.submit(); n.textContent = "Submitted — the confirmation opens in a new tab."; return; }
-    const label = btn.textContent; btn.disabled = true; btn.textContent = "Sending…";
+    const em = f.elements.email ? f.elements.email.value.trim().toLowerCase() : "";
+    if (opts.dedupe && em && em === lastOk) { n.className = "fnote ok"; n.textContent = opts.again; return; }
+    const label = btn.textContent; busy = true; btn.disabled = true; btn.textContent = "Sending…"; f.setAttribute("aria-busy", "true");
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), C.timeoutMs || 15000);
+    let status = 0, raw = "", relock = 0;
     try {
-      const res = await fetch(url, { method: "POST", body: new FormData(f), headers: { Accept: "application/json" } });
-      if (res.ok) { f.reset(); n.className = "fnote ok"; n.textContent = okMsg; return; }
-      let data = null; try { data = await res.json(); } catch (x) {}
+      const res = await fetch(url, { method: "POST", body: new FormData(f), headers: { Accept: "application/json" }, signal: ctl.signal });
+      status = res.status; raw = await res.text().catch(() => "");
+      if (res.ok) { f.reset(); n.className = "fnote ok"; n.textContent = okMsg; relock = 8000; if (opts.dedupe) lastOk = em; return; }
+      let data = null; try { data = JSON.parse(raw); } catch (x) {}
       const errs = (data && data.errors) || [];
       errs.forEach(er => { const el = er.field && f.elements[er.field]; if (el && el.dataset && el.dataset.rule) showError(el, er.field === "email" ? "Enter a valid email address." : "Check this field and try again."); });
-      n.className = "fnote bad"; n.textContent = errs.length ? "Please check the highlighted fields and try again." : "That didn’t send. Please try again in a moment.";
-    } catch (err) { n.className = "fnote bad"; n.textContent = "That didn’t send. Check your connection and try again."; }
-    finally { btn.disabled = false; btn.textContent = label; }
+      console.warn("[MarqCØtham form] the form service replied HTTP " + status + ": " + raw.slice(0, 300));
+      n.className = "fnote bad";
+      n.textContent = errs.length ? "Please check the highlighted fields and try again."
+        : status === 400 || status === 422 ? "That didn’t go through. Please check what you entered and try again."
+        : status === 403 || status === 404 ? "Sending is temporarily unavailable. Please try again later. (error " + status + ")"
+        : status === 429 ? "Too many attempts. Please wait a minute and try again."
+        : status >= 500 ? "The service had a problem. Please try again shortly. (error " + status + ")"
+        : "That didn’t send. Please try again in a moment. (error " + status + ")";
+    } catch (err) {
+      console.warn("[MarqCØtham form] request failed:", err && err.name, err && err.message); raw = String(err && err.message || err);
+      n.className = "fnote bad";
+      n.textContent = err && err.name === "AbortError" ? "That took too long. Check your connection and try again." : "Couldn’t reach the service. Check your connection and try again.";
+    } finally {
+      clearTimeout(timer); busy = false; f.removeAttribute("aria-busy");
+      if (FORM_DEBUG && !relock) n.textContent += " [debug: status " + status + " · " + raw.slice(0, 200) + "]";
+      if (relock) { btn.textContent = "Sent"; setTimeout(() => { btn.disabled = false; btn.textContent = label; }, relock); }
+      else { btn.disabled = false; btn.textContent = label; }
+    }
   });
 }
-wireForm("#sform", "#snote", "signupAction", "You’re on the list. We’ll let you know when new music drops.");
+
+wireForm("#sform", "#snote", "signupAction", "You’re on the list. We’ll let you know when new music drops.", { dedupe: true, again: "That email is already on the list." });
 wireForm("#bform", "#bnote", "beatsAction", "Beat received. Thanks for sending it.");
 if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(C.publicEmail || "")) $("#cemail").innerHTML = `Booking, press, or business: <a href="mailto:${esc(C.publicEmail)}">${esc(C.publicEmail)}</a>`;
 else $("#cemail").closest("section").remove();
