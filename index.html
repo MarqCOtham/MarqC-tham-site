@@ -491,7 +491,7 @@ footer{background:linear-gradient(var(--bg),#0e0e11)}
 <p class="small">You’ll only receive updates from MarqCØtham. Unsubscribe anytime.</p>
 <p class="fnote" id="snote" role="status" aria-live="polite"></p>
 </form></div></section>
-<section class="tight cx"><div class="wrap"><h2>Send beats</h2><p class="by">Think your sound belongs in the CØTHAM world? Send your best work.</p><p class="by">This is for producers who want to submit beats for potential collaboration or consideration.</p>
+<section class="tight cx"><div class="wrap"><h2>Send beats</h2><p class="by">Think your sound belongs in the CØTHAM world? Send your best work.</p><p class="by">This is for beats, instrumentals, mixes, masters and other production work, submitted for potential collaboration or consideration.</p>
 <form class="cform" id="bform" method="post" novalidate>
 <input type="hidden" name="form" value="beat-submission"><input type="hidden" name="_subject" value="MarqCØtham beat submission">
 <label>Producer name<input name="producer_name" autocomplete="name" data-rule="required" data-name="Producer name" maxlength="120"><span class="ferr" hidden></span></label>
@@ -645,7 +645,11 @@ const SITE = {
     { type: "new-release", date: "2026-09-15", release: "let-it-break" },
     { type: "new-release", date: "2026-09-11", release: "heartleaks" }
   ],
-  contact: { formAction: "https://formspree.io/f/xvkgejpk", signupAction: "", beatsAction: "", mode: "fetch", publicEmail: "" },   // formAction = your form/email-list endpoint; signupAction / beatsAction optionally split the two forms
+  contact: {
+    signupAction: "https://formspree.io/f/xppwvgaw",   // RELEASE NOTIFICATIONS (Stay in the loop / Website Apply)
+    beatsAction: "https://formspree.io/f/xvkgejpk",    // BEAT SUBMISSION (beats, instrumentals, mixes, masters, production work)
+    mode: "fetch", publicEmail: ""
+  },   // each form has its own endpoint (no shared fallback)
   milestones: [],        // { date: "YYYY-MM-DD", title, text, image: "imgKey", url, release: "slug" } (album releases are added automatically)
   shop: { enabled: false },   // reserved for a future SHOP page (no store built)
   // extra release fields: story (About the song), visuals ["imgKey"], videos ["youtube url"], crew { Producer: "", Songwriter: "", ... }, embedUrls { bandcamp: "official embed url" }
@@ -1006,7 +1010,7 @@ else $("#latest-news").remove();
 if (!ANN.length) dropLink("#/news");
 
 // CONTACT: release signup + beat submission. Each form posts to a real service; nothing shows as sent unless the service accepts it.
-// Endpoints: SITE.contact.signupAction / beatsAction, each falling back to SITE.contact.formAction.
+// Endpoints: SITE.contact.signupAction (release notifications) and SITE.contact.beatsAction (beat submissions). There is NO fallback between them.
 // SITE.contact.mode: "fetch" (default, inline result; needs a service that accepts JSON posts) or "post" (plain form post, confirmation opens in a new tab).
 const C = SITE.contact;
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
@@ -1025,7 +1029,7 @@ function showError(el, msg) {
 }
 const FORM_DEBUG = /[?&]formdebug=1/.test(location.search);   // visit the site with ?formdebug=1 to see the exact reply from the form service
 function wireForm(formId, noteId, key, okMsg, opts = {}) {
-  const f = $(formId), n = $(noteId), btn = f.querySelector("button[type=submit]"), url = safe(C[key]) || safe(C.formAction);
+  const f = $(formId), n = $(noteId), btn = f.querySelector("button[type=submit]"), url = safe(C[key]);
   if (!url) { f.querySelectorAll("input,textarea,button").forEach(x => x.disabled = true); n.textContent = "This form is temporarily unavailable."; return; }
   f.action = url;
   let busy = false, lastOk = "";
@@ -1066,7 +1070,7 @@ function wireForm(formId, noteId, key, okMsg, opts = {}) {
       n.textContent = err && err.name === "AbortError" ? "That took too long. Check your connection and try again." : "Couldn’t reach the service. Check your connection and try again.";
     } finally {
       clearTimeout(timer); busy = false; f.removeAttribute("aria-busy");
-      if (FORM_DEBUG && !relock) n.textContent += " [debug: status " + status + " · " + raw.slice(0, 200) + "]";
+      if (FORM_DEBUG) n.textContent += " [debug: endpoint " + url.split("/").pop() + " · status " + status + (relock ? "" : " · " + raw.slice(0, 200)) + "]";
       if (relock) { btn.textContent = "Sent"; setTimeout(() => { btn.disabled = false; btn.textContent = label; }, relock); }
       else { btn.disabled = false; btn.textContent = label; }
     }
